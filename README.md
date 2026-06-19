@@ -27,6 +27,9 @@ python api_client.py
 
 # 5. Run any recipe (from the repo root)
 python examples/enrich_company.py shopback
+
+# ...or smoke-test every recipe at once
+python run_all.py
 ```
 
 ## What's here
@@ -36,6 +39,7 @@ python examples/enrich_company.py shopback
 | `api_client.py` | Shared library — `AltClient` (token caching, paging, 429 back-off) plus CLI and CSV/JSON output helpers used by every example. Run it directly for a smoke test. |
 | `COOKBOOK.md` | The recipe catalog: what each script does, the API calls, and an example command. |
 | `examples/` | One runnable script per recipe. |
+| `run_all.py` | Smoke-test runner — executes every recipe with a light invocation and reports pass/fail. |
 | `.env.example` | Template for your credentials. Copy to `.env` (which is gitignored). |
 | `requirements.txt` | Python dependencies. |
 
