@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from api_client import AltClient, build_parser, emit, pick, sort_records  # noqa: E402
+from api_client import AltClient, build_parser, emit, pick  # noqa: E402
 
 
 def row(company):
@@ -60,10 +60,11 @@ def main():
         filters.append({"op": "gte", "field": "year_founded", "value": args.founded_after})
 
     client = AltClient()
+    # Sort server-side via `ordering` (query param) for a true global top-N.
     data = client.post("capital-receivers/", {"filters": {"all": filters}},
-                       params={"limit": args.limit})
-    records = sort_records([row(r) for r in data.get("results", [])],
-                           args.sort or "-latest_valuation_usd")
+                       params={"limit": args.limit,
+                               "ordering": args.sort or "-latest_valuation_usd"})
+    records = [row(r) for r in data.get("results", [])]
     print(f"{data.get('count')} companies in this map; showing {len(records)}.",
           file=sys.stderr)
     emit(records, fmt=args.format, output=args.output)

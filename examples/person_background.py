@@ -57,14 +57,9 @@ def main():
     if args.uuid:
         uuid = args.uuid
     else:
-        # People search matches a single token at a time, so if the full name
-        # finds nothing, fall back to its individual words (longest first).
-        queries = [args.name] + sorted(args.name.split(), key=len, reverse=True)
-        matches = []
-        for q in queries:
-            matches = client.get("people/", params={"search": q, "limit": 1}).get("results", [])
-            if matches:
-                break
+        matches = client.get(
+            "people/", params={"search": args.name, "limit": 1}
+        ).get("results", [])
         if not matches:
             print(f"No person matching '{args.name}'.", file=sys.stderr)
             return

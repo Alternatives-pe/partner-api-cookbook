@@ -86,8 +86,9 @@ class AltClient:
 
             {"filters": {"all": [{"op": "eq", "field": "...", "value": ...}]}}
 
-        Note: ``limit``, ``offset`` and ``ordering`` are honored only as query
-        parameters (pass them via ``params``), not inside the JSON body.
+        Note: the JSON body accepts **only** ``filters``. Pagination and sorting
+        (``limit``, ``offset``, ``ordering``) are query parameters — pass them
+        via ``params``. Any other top-level body key is rejected with HTTP 400.
         """
         url = f"{BASE_URL}/{path.lstrip('/')}"
         headers = {**self._headers(), "Content-Type": "application/json"}
@@ -179,8 +180,11 @@ def sort_records(records, sort):
     """Sort a list of dict records client-side by a (dotted) key.
 
     Prefix the key with '-' for descending. Missing/None values always sort
-    last. We sort client-side because the API's server-side ``ordering`` is
-    unreliable across endpoints — doing it here keeps every script consistent.
+    last. Most list endpoints now support server-side ``ordering`` (pass it as
+    a query param for a true global top-N), so prefer that where you can. Use
+    this helper for rankings the API can't do for you: values computed
+    client-side (IRR, co-investment counts) or read from sub-resources
+    (cap tables, commitments), and endpoints without a working ``ordering``.
     Note: this orders only the rows you fetched, not the full result set.
     """
     if not sort:
