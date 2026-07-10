@@ -66,7 +66,7 @@ python run_all.py
 Every script accepts the same options (see `--help` on any of them):
 
 - `-n, --limit` — max rows to fetch / return.
-- `-s, --sort` — ordering field; prefix `-` for descending. Pass with `=`, e.g. `--sort=-latest_valuation_usd` (argparse otherwise treats the leading `-` as a flag). Sorting is applied **client-side** over the fetched rows.
+- `-s, --sort` — ordering field; prefix `-` for descending. Pass with `=`, e.g. `--sort=-latest_valuation_usd` (argparse otherwise treats the leading `-` as a flag). Recipes that hit a list endpoint sort **server-side** (a true global top-N); a few that rank on computed metrics or sub-resources sort client-side over the fetched rows.
 - `-f, --format` — `csv` (default) or `json`.
 - `-o, --output` — write to a file instead of stdout (progress goes to stderr).
 
@@ -80,7 +80,7 @@ python examples/fund_benchmark.py --vintage-from 2018 --format json -o out/funds
 - **Read the API key from the environment** (`ALT_API_KEY`), never hard-code it.
 - **Cache the bearer token** — it's valid for 24h; don't re-issue it on every call.
 - **Use `POST` body filters** for anything beyond a simple search, wrapped in a boolean group: `{"filters": {"all": [...]}}` (or `any` / `not`).
-- **Pass `limit`/`offset` as query params** — they're ignored inside the POST body.
+- **Pass `limit`/`offset`/`ordering` as query params** — the POST body accepts **only** `filters`; any other top-level key returns HTTP 400.
 - **Store UUIDs** — there are no integer IDs.
 - **Handle errors:** `429` = back off and retry (built in), `403` = subscription/entitlement gap, `401` = bad or expired token.
 - **Money fields are USD-normalized** (`_usd` suffix) — no client-side FX needed.

@@ -13,7 +13,7 @@ Every script imports the shared client in [`api_client.py`](api_client.py), whic
 | `-f, --format` | `csv` (default) or `json` |
 | `-o, --output` | write to a file instead of stdout |
 
-> **Ordering is applied client-side.** The API's server-side `ordering` is unreliable (it errors on some endpoints), so the scripts sort the rows they fetched. `--sort` therefore orders within the fetched window, not the whole result set — raise `-n` to widen it.
+> **Sorting.** Recipes backed by a list endpoint sort **server-side** by passing `ordering` as a query param, so `--sort` gives a true global top-N. A few recipes still sort client-side because they rank on values computed per row (IRR in fund benchmarking, shared-company counts in the syndicate map) or read from sub-resources (cap tables, commitments); there `--sort` orders only the fetched window, so raise `-n` to widen it.
 
 Run everything from the repo root with the virtualenv active (see [README](README.md)).
 
@@ -51,7 +51,7 @@ client.post("capital-receivers/", {
         {"op": "in", "field": "themes_keys", "value": ["themes_payments"]},
         {"op": "eq", "field": "headquarters_country_iso_alpha3", "value": "SGP"},
     ]},
-}, params={"limit": 50})   # limit is a query param, not a body field
+}, params={"limit": 50, "ordering": "-latest_valuation_usd"})   # limit & ordering are query params; the body takes only `filters`
 ```
 
 ```bash
@@ -90,7 +90,7 @@ python examples/person_background.py "Shanru Lai" --role founder
 python examples/person_background.py "Henry Chan" --investments
 ```
 
-> People search matches a single token at a time, and server-side `role_type_key` filtering is unreliable — the script falls back to individual name tokens and filters roles client-side.
+> Search on the full name directly. Roles come back as a small per-person list, so `--role` filters them client-side — matching on either the role key or its display name.
 
 ---
 
@@ -222,7 +222,7 @@ python examples/watchlist_monitor.py --file watchlist.txt
 **Script:** [`examples/lp_intelligence.py`](examples/lp_intelligence.py)
 
 ```python
-client.get(f"funds/{fund_uuid}/commitments/")            # commitment records into a fund
+client.get(f"funds/{fund_uuid}/commitments/")            # LPs into a fund (transactions[].buyer)
 client.get(f"capital-allocators/{lp_uuid}/commitments/") # funds a given LP backs (by name)
 ```
 
@@ -231,7 +231,7 @@ python examples/lp_intelligence.py --lp Wavemaker
 python examples/lp_intelligence.py --fund "Bain Capital Asia III"
 ```
 
-> The fund-side feed exposes commitment records (date, asset class, amount) but does **not** name the committing LP. For LP-by-name relationships, use the LP-side view (`--lp`).
+> The fund-side feed now names the committing LPs: each commitment carries `transactions[]`, and each transaction's `buyer` is the LP (uuid, name, type). The `--fund` view expands these into one row per LP. The `--lp` view is the reverse lens — the funds a given LP backs.
 
 ### 12. Auditor / service-provider signal
 **What:** Use auditor and professional-services links as a diligence and network cross-check.
@@ -267,8 +267,8 @@ python examples/reference_data.py --type countries
 
 - **Cache the token.** Bearer tokens from `POST /v3/token/issue/` last 24h — reuse, don't re-issue per call. `AltClient` does this for you.
 - **Wrap filters in a boolean group.** POST bodies need `{"filters": {"all": [...]}}` (or `any` / `not`) — a bare `{"op", "field", "value"}` is rejected. Operators: `eq`, `ne`, `in`, `nin`, `contains`, `gt`, `gte`, `lt`, `lte`, `range`, `isnull`.
-- **`limit`/`offset` are query params, even for POST.** They are ignored inside the JSON body.
-- **Sort client-side.** Server-side `ordering` is unreliable (it 500s on `capital-receivers`), so the scripts sort the fetched rows themselves.
+- **`limit`/`offset`/`ordering` are query params, even for POST.** The JSON body accepts **only** `filters`; sending any other top-level key returns HTTP 400.
+- **Sort server-side where you can.** Pass `ordering` as a query param on list endpoints for a true global top-N. Fall back to client-side sorting only for rankings the API can't do: values computed per row (IRR, co-investment counts) or read from sub-resources (cap tables, commitments), and endpoints without a working `ordering` (currently `funds` and `capital-allocators`).
 - **Bootstrap reference data.** Cache `GET /reference-data/?type=enums` to get valid filter keys (theme keys, stages, etc.). See the helper above.
 - **Check `captable_source.type`** before reading cap tables (`managed` vs `snapshot`).
 - **Store UUIDs.** There are no integer IDs and no v2→v3 ID mapping.

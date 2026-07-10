@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from api_client import AltClient, build_parser, emit, pick, sort_records  # noqa: E402
+from api_client import AltClient, build_parser, emit, pick  # noqa: E402
 
 
 def row(sp):
@@ -45,7 +45,9 @@ def main():
                                           "(filtered client-side)")
     args = parser.parse_args()
 
-    params = {"limit": args.limit}
+    # Sort server-side via `ordering` (query param); the country filter below
+    # only narrows the ordered rows, so their order is preserved.
+    params = {"limit": args.limit, "ordering": args.sort or "name"}
     if args.service_type:
         params["service_type"] = args.service_type
     if args.search:
@@ -57,7 +59,6 @@ def main():
     if args.country:
         rows = [r for r in rows if r["domicile_country"]
                 and args.country.lower() in r["domicile_country"].lower()]
-    rows = sort_records(rows, args.sort or "name")
     print(f"{len(rows)} service provider(s).", file=sys.stderr)
     emit(rows, fmt=args.format, output=args.output)
 

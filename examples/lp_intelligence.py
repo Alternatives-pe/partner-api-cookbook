@@ -2,8 +2,8 @@
 Recipe 11 — LP / fundraising intelligence.
 
 Map limited-partner relationships two ways:
-  * --fund: the commitment records INTO a given fund (date, asset class, amount).
-            Note: the fund-side feed does not name the committing LP.
+  * --fund: the LPs committed INTO a given fund — one row per committing LP
+            (name, type) with the commitment date, asset class and amount.
   * --lp:   where a given limited partner has committed capital — the funds it
             backs, by name. This is the richer view for building a target list.
 
@@ -34,16 +34,34 @@ def resolve(client, path, query, name_field="display_name"):
     return res[0]["uuid"], res[0].get(name_field)
 
 
-def fund_lp_row(r):
-    # The fund-side commitments feed exposes the commitment records (date, asset
-    # class, amount) but not the committing LP's identity. To see which LP backs
-    # which fund by name, use the LP-side view (--lp).
-    return {
-        "date": r.get("date"),
-        "allocation_type": r.get("allocation_type_name"),
-        "allocation_subtype": r.get("allocation_subtype_name"),
-        "amount_committed_usd": r.get("investment_amount_usd"),
+def fund_lp_rows(commitment):
+    """Expand one fund-side commitment into a row per committing LP.
+
+    Each commitment groups one or more transactions; a transaction's ``buyer``
+    is the committing LP (uuid, name, type). We emit one row per buyer, with
+    the transaction-level amount. Commitments with no transactions still yield
+    a single row (LP unknown) so nothing is silently dropped.
+    """
+    meta = {
+        "date": commitment.get("date"),
+        "allocation_type": commitment.get("allocation_type_name"),
+        "allocation_subtype": commitment.get("allocation_subtype_name"),
     }
+    txns = commitment.get("transactions") or []
+    if not txns:
+        return [{"lp": None, "lp_uuid": None, "lp_type": None, **meta,
+                 "amount_committed_usd": commitment.get("investment_amount_usd")}]
+    rows = []
+    for t in txns:
+        buyer = t.get("buyer") or {}
+        rows.append({
+            "lp": buyer.get("name"),
+            "lp_uuid": buyer.get("uuid"),
+            "lp_type": buyer.get("type"),
+            **meta,
+            "amount_committed_usd": t.get("investment_amount_usd"),
+        })
+    return rows
 
 
 def lp_commitment_row(r):
@@ -74,8 +92,9 @@ def main():
         if not uuid:
             print(f"No fund matching '{args.fund}'.", file=sys.stderr)
             return
-        rows = [fund_lp_row(r) for r in
-                client.paginate(f"funds/{uuid}/commitments/", max_records=args.limit)]
+        rows = []
+        for c in client.paginate(f"funds/{uuid}/commitments/", max_records=args.limit):
+            rows.extend(fund_lp_rows(c))
         rows = sort_records(rows, args.sort or "-amount_committed_usd")
         print(f"Fund {label}: {len(rows)} LP commitment(s).", file=sys.stderr)
     elif args.lp or args.lp_uuid:
