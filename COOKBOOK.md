@@ -268,7 +268,7 @@ python examples/reference_data.py --type countries
 - **Cache the token.** Bearer tokens from `POST /v3/token/issue/` last 24h — reuse, don't re-issue per call. `AltClient` does this for you.
 - **Wrap filters in a boolean group.** POST bodies need `{"filters": {"all": [...]}}` (or `any` / `not`) — a bare `{"op", "field", "value"}` is rejected. Operators: `eq`, `ne`, `in`, `nin`, `contains`, `gt`, `gte`, `lt`, `lte`, `range`, `isnull`.
 - **`limit`/`offset`/`ordering` are query params, even for POST.** The JSON body accepts **only** `filters`; sending any other top-level key returns HTTP 400.
-- **Sort server-side where you can.** Pass `ordering` as a query param on list endpoints for a true global top-N. Fall back to client-side sorting only for rankings the API can't do: values computed per row (IRR, co-investment counts) or read from sub-resources (cap tables, commitments), and endpoints without a working `ordering` (currently `funds` and `capital-allocators`).
+- **Sort server-side where you can.** Pass `ordering` as a query param on list endpoints for a true global top-N; an invalid field returns a 400 listing the valid ones. Fall back to client-side sorting only for rankings the API can't do: values computed per row (IRR, co-investment counts) or read from sub-resources (cap tables, commitments, an allocator's investments — these ignore `ordering`).
 - **Bootstrap reference data.** Cache `GET /reference-data/?type=enums` to get valid filter keys (theme keys, stages, etc.). See the helper above.
 - **Check `captable_source.type`** before reading cap tables (`managed` vs `snapshot`).
 - **Store UUIDs.** There are no integer IDs and no v2→v3 ID mapping.
