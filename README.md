@@ -36,7 +36,7 @@ python run_all.py
 
 | File | Purpose |
 | --- | --- |
-| `api_client.py` | Shared library — `AltClient` (token caching, paging, 429 back-off) plus CLI and CSV/JSON output helpers used by every example. Run it directly for a smoke test. |
+| `api_client.py` | Shared library — `AltClient` (token caching, paging, rate-limit handling) plus CLI and CSV/JSON output helpers used by every example. Run it directly for a smoke test. |
 | `COOKBOOK.md` | The recipe catalog: what each script does, the API calls, and an example command. |
 | `examples/` | One runnable script per recipe. |
 | `run_all.py` | Smoke-test runner — executes every recipe with a light invocation and reports pass/fail. |
@@ -83,7 +83,8 @@ python examples/fund_benchmark.py --vintage-from 2018 --format json -o out/funds
 - **Use `POST` body filters** for anything beyond a simple search, wrapped in a boolean group: `{"filters": {"all": [...]}}` (or `any` / `not`).
 - **Pass `limit`/`offset`/`ordering` as query params** — the POST body accepts **only** `filters`; any other top-level key returns HTTP 400.
 - **Store UUIDs** — there are no integer IDs.
-- **Handle errors:** `429` = back off and retry (built in), `403` = subscription/entitlement gap, `401` = bad or expired token.
+- **Honor the rate-limit cooldown.** A `429` carries `Retry-After` (seconds until the rolling window frees capacity, repeated in the body as `retry_after_seconds`) plus `scope` and `dimension` naming which limit you hit. `AltClient` waits exactly that long and retries — up to `ALT_MAX_RETRY_WAIT` seconds (default 120), after which it raises `RateLimitExceeded`. Retrying sooner than asked just burns another slot in the window.
+- **Handle the other errors:** `403` = subscription/entitlement gap, `401` = bad or expired token.
 - **Money fields are USD-normalized** (`_usd` suffix) — no client-side FX needed.
 
 ## Security

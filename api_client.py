@@ -3,11 +3,12 @@ Shared library for the Alternatives Partner API (v3) cookbook.
 
 Provides:
   - AltClient: a thin HTTP client that handles auth, token caching, paging,
-    and 429 back-off. The patterns it demonstrates are the ones we recommend
+    and rate-limit cooldowns. The patterns it demonstrates are the ones we recommend
     in every example:
       * read the API key from the environment (never hard-code it)
       * exchange the key for a bearer token and cache it (valid 24h)
-      * reuse one session, page with limit/offset, back off on 429
+      * reuse one session, page with limit/offset
+      * on 429, wait the cooldown the response asks for, then retry
   - CLI + output helpers shared across the cookbook scripts:
       * add_common_args() / build_parser() — standard --limit/--sort/--format/-o
       * emit() — write a list of records as CSV (default) or JSON
@@ -23,6 +24,7 @@ import argparse
 import csv
 import json
 import os
+import random
 import sys
 import time
 
@@ -31,9 +33,77 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Longest single cooldown we will sit through before giving up and raising. A
+# rolling-window limit hands back a delta of seconds; anything beyond this is
+# better surfaced to the caller than slept off inside a script.
+MAX_RETRY_WAIT = float(os.environ.get("ALT_MAX_RETRY_WAIT", "120"))
+
 API_KEY = os.environ.get("ALT_API_KEY")
 BASE_URL = os.environ.get("ALT_BASE_URL", "https://api.altdmp.io/v3/partners")
 TOKEN_URL = os.environ.get("ALT_TOKEN_URL", "https://api.altdmp.io/v3/token/issue/")
+
+
+class RateLimitExceeded(requests.HTTPError):
+    """A 429 that outlived the retry budget.
+
+    Subclasses ``requests.HTTPError`` so callers that already catch that keep
+    working, and carries the response so ``exc.response`` still holds the
+    server's headers and body.
+    """
+
+
+def _rate_limit_wait(resp, attempt):
+    """Seconds to wait before retrying a 429.
+
+    Prefers the server's own cooldown over anything we could guess: the API
+    returns ``Retry-After`` and ``X-RateLimit-Reset`` as a delta in seconds —
+    the time until the rolling window frees capacity — and repeats it in the
+    body as ``retry_after_seconds``. Falls back to exponential backoff only when
+    the response carries none of them.
+
+    A little jitter is added so several clients released from the same window
+    don't retry on the same tick and immediately re-trip the limit.
+    """
+    wait = None
+    header = resp.headers.get("Retry-After") or resp.headers.get("X-RateLimit-Reset")
+    if header is not None:
+        try:
+            wait = float(header)
+        except ValueError:
+            # Retry-After also has an HTTP-date form. This API sends seconds, so
+            # rather than parse dates, fall through to backoff.
+            wait = None
+    if wait is None:
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        if isinstance(body, dict) and body.get("retry_after_seconds") is not None:
+            try:
+                wait = float(body["retry_after_seconds"])
+            except (TypeError, ValueError):
+                wait = None
+    if wait is None:
+        wait = float(2 ** attempt)
+    return max(wait, 0.0) + random.uniform(0, 0.5)
+
+
+def _rate_limit_detail(resp):
+    """Human-readable summary of which limit was hit, for logs and errors."""
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    bits = []
+    for key in ("scope", "dimension"):
+        if body.get(key):
+            bits.append(f"{key}={body[key]}")
+    limit = resp.headers.get("X-RateLimit-Limit")
+    if limit:
+        bits.append(f"limit={limit}")
+    return ", ".join(bits) or "no scope reported"
 
 
 class AltClient:
@@ -50,12 +120,53 @@ class AltClient:
         self._token = None
         self._token_expiry = 0.0
 
+    def _request(self, method, url, headers=None, params=None, json_body=None,
+                 max_retries=4):
+        """Send one request, waiting out 429s for as long as the server asks.
+
+        Rate-limit responses carry the exact cooldown (``Retry-After``, mirrored
+        in the body as ``retry_after_seconds``), so we sleep for that rather than
+        guessing with a fixed backoff — retrying early just burns another slot in
+        the window. Every other error is raised as usual.
+        """
+        for attempt in range(max_retries + 1):
+            resp = self.session.request(
+                method, url, headers=headers, params=params, json=json_body,
+                timeout=30,
+            )
+            if resp.status_code != 429:
+                resp.raise_for_status()
+                return resp
+            if attempt == max_retries:
+                break
+            wait = _rate_limit_wait(resp, attempt)
+            if wait > MAX_RETRY_WAIT:
+                raise RateLimitExceeded(
+                    f"Rate limited ({_rate_limit_detail(resp)}); the API asked for "
+                    f"{wait:.0f}s, above the {MAX_RETRY_WAIT:.0f}s cap. Raise "
+                    f"ALT_MAX_RETRY_WAIT to wait longer.",
+                    response=resp,
+                )
+            print(
+                f"Rate limited ({_rate_limit_detail(resp)}); "
+                f"waiting {wait:.0f}s before retry {attempt + 1}/{max_retries}…",
+                file=sys.stderr,
+            )
+            time.sleep(wait)
+        raise RateLimitExceeded(
+            f"Rate limited ({_rate_limit_detail(resp)}) and still limited after "
+            f"{max_retries} retries.",
+            response=resp,
+        )
+
     def _get_token(self):
         # Reuse the cached token until ~5 min before it expires (tokens last 24h).
         if self._token and time.time() < self._token_expiry - 300:
             return self._token
-        resp = self.session.post(TOKEN_URL, json={"api_key": self.api_key}, timeout=30)
-        resp.raise_for_status()
+        # Token issuance is rate-limited on its own scope (token.issue), and a
+        # script that re-issues per process trips it well before any data call
+        # does — so this goes through the same retry path as everything else.
+        resp = self._request("POST", TOKEN_URL, json_body={"api_key": self.api_key})
         body = resp.json()
         self._token = body["access_token"]
         # token_duration is in minutes
@@ -67,16 +178,10 @@ class AltClient:
 
     def get(self, path, params=None, max_retries=4):
         url = f"{BASE_URL}/{path.lstrip('/')}"
-        for attempt in range(max_retries):
-            resp = self.session.get(
-                url, headers=self._headers(), params=params, timeout=30
-            )
-            if resp.status_code == 429:  # rate limited — back off and retry
-                time.sleep(2**attempt)
-                continue
-            resp.raise_for_status()
-            return resp.json()
-        resp.raise_for_status()
+        return self._request(
+            "GET", url, headers=self._headers(), params=params,
+            max_retries=max_retries,
+        ).json()
 
     def post(self, path, body, params=None, max_retries=4):
         """Advanced filtering via JSON body.
@@ -92,16 +197,10 @@ class AltClient:
         """
         url = f"{BASE_URL}/{path.lstrip('/')}"
         headers = {**self._headers(), "Content-Type": "application/json"}
-        for attempt in range(max_retries):
-            resp = self.session.post(
-                url, headers=headers, json=body, params=params, timeout=30
-            )
-            if resp.status_code == 429:
-                time.sleep(2**attempt)
-                continue
-            resp.raise_for_status()
-            return resp.json()
-        resp.raise_for_status()
+        return self._request(
+            "POST", url, headers=headers, params=params, json_body=body,
+            max_retries=max_retries,
+        ).json()
 
     def paginate_post(self, path, body, params=None, page_size=200, max_records=None):
         """Yield results across pages of a POST filter endpoint.

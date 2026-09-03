@@ -4,7 +4,7 @@ Recipe-style use cases for the **Alternatives Partner API (v3)**, grouped from s
 
 Base URL: `https://api.altdmp.io/v3/partners/`. All money fields are USD-normalized (`_usd`). Full reference: https://docs.altdmp.io/
 
-Every script imports the shared client in [`api_client.py`](api_client.py), which handles auth, token caching, paging, and 429 back-off. They all accept the same switches:
+Every script imports the shared client in [`api_client.py`](api_client.py), which handles auth, token caching, paging, and rate-limit cooldowns. They all accept the same switches:
 
 | Switch | Meaning |
 | --- | --- |
@@ -307,5 +307,6 @@ python examples/reference_data.py --type countries
 - **Bootstrap reference data.** Cache `GET /reference-data/?type=enums` to get valid filter keys (theme keys, stages, etc.). See the helper above.
 - **Check `captable_source.type`** before reading cap tables (`managed` vs `snapshot`).
 - **Store UUIDs.** There are no integer IDs and no v2→v3 ID mapping.
-- **Handle errors:** `429` = back off and retry (built in), `403` = subscription/entitlement gap (not a bug), `401` = bad or expired token, `400` = bad filter (e.g. `/investors/` on a snapshot company).
+- **Wait out a `429` for exactly as long as the API asks.** The response carries `Retry-After` in seconds — the time until the rolling window frees capacity — mirrored in the body as `retry_after_seconds`, alongside the `scope` and `dimension` that were limited (e.g. `scope=token.issue, dimension=ip`). `AltClient` sleeps for that and retries; a fixed backoff that fires early just consumes another slot. Token issuance has its own scope, so a job that starts a fresh process per entity hits it long before any data call does.
+- **Handle the other errors:** `403` = subscription/entitlement gap (not a bug), `401` = bad or expired token, `400` = bad filter (e.g. `/investors/` on a snapshot company).
 - **Money is USD-normalized** (`_usd` suffix) — no client-side FX.
