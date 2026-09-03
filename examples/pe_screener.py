@@ -1,5 +1,5 @@
 """
-Recipe 9 — PE buyout / target screening engine.
+Recipe 10 — PE buyout / target screening engine.
 
 Screen for mature, profitable, growing businesses: filter on revenue, revenue
 growth and trading status server-side, then enrich each candidate with its

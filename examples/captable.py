@@ -1,5 +1,5 @@
 """
-Recipe 6 — Cap table & ownership analysis for a target.
+Recipe 7 — Cap table & ownership analysis for a target.
 
 For a company, pull who owns what. The shape depends on how the cap table is
 sourced, which you must check first:

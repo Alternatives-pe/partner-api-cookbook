@@ -1,5 +1,5 @@
 """
-Recipe 8 — Co-investor / syndicate network mapping.
+Recipe 9 — Co-investor / syndicate network mapping.
 
 Aggregate cap tables across a set of companies to see who co-invests with whom.
 Source the companies either by theme (+ optional country) or by passing explicit

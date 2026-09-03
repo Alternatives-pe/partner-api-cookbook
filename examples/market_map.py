@@ -1,5 +1,5 @@
 """
-Recipe 5 — Thematic market map.
+Recipe 6 — Thematic market map.
 
 Landscape every company in a theme (+ optional geography and minimum founding
 year), ranked by latest valuation, with revenue alongside. Underpins sector

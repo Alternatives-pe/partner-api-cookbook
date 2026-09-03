@@ -1,5 +1,5 @@
 """
-Recipe 12 — Auditor / service-provider signal.
+Recipe 13 — Auditor / service-provider signal.
 
 List professional-services firms (auditors by default, but also tax, legal,
 fund administration, etc.) as a diligence and network cross-check. The mix of

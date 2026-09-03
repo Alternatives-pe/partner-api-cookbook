@@ -26,6 +26,7 @@ RECIPES = [
     ("sourcing_raising_now", ["--country", "SGP", "-n", "5"]),
     ("investor_portfolio",   ["Wavemaker", "-n", "5"]),
     ("person_background",    ["Shanru Lai", "-n", "5"]),
+    ("deal_flow",            ["-n", "5"]),
     ("market_map",           ["--themes", "themes_payments", "--country", "SGP", "-n", "5"]),
     ("captable",             ["shopback", "-n", "5"]),
     ("fund_benchmark",       ["--vintage-from", "2016", "--vintage-to", "2017", "-n", "3"]),

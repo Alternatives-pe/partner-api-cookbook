@@ -51,6 +51,7 @@ python run_all.py
 | `examples/sourcing_raising_now.py` | Live deal-flow sourcing |
 | `examples/investor_portfolio.py` | Competitor / co-investor portfolio pull |
 | `examples/person_background.py` | Founder / director background check |
+| `examples/deal_flow.py` | Market-wide deal flow (date window) |
 | `examples/market_map.py` | Thematic market map |
 | `examples/captable.py` | Cap table & ownership analysis |
 | `examples/fund_benchmark.py` | Fund benchmarking (IRR/TVPI/DPI/RVPI) |

@@ -1,5 +1,5 @@
 """
-Recipe 7 — Fund benchmarking.
+Recipe 8 — Fund benchmarking.
 
 Compare IRR / TVPI / DPI / RVPI across funds by vintage to benchmark a GP or
 screen funds. Performance metrics are NOT on the fund list, so we fetch the

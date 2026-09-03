@@ -1,5 +1,5 @@
 """
-Recipe 11 — LP / fundraising intelligence.
+Recipe 12 — LP / fundraising intelligence.
 
 Map limited-partner relationships two ways:
   * --fund: the LPs committed INTO a given fund — one row per committing LP

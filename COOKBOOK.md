@@ -92,11 +92,39 @@ python examples/person_background.py "Henry Chan" --investments
 
 > Search on the full name directly. Roles come back as a small per-person list, so `--role` filters them client-side — matching on either the role key or its display name.
 
+### 5. Market-wide deal flow
+**What:** Every funding round across the market inside a date window — no company list needed — ranked by date or by size.
+**Why:** Answers "what closed last quarter, and what were the biggest rounds" in one query, instead of walking companies one at a time and discarding everything outside the window.
+**Script:** [`examples/deal_flow.py`](examples/deal_flow.py)
+
+```python
+client.post("capital-receivers/deals/", {
+    "filters": {"all": [
+        {"op": "gte", "field": "date", "value": "2026-06-01"},
+        {"op": "in",  "field": "deal_transaction_type_key", "value": ["seed"]},
+    ]},
+}, params={"limit": 200, "ordering": "-total_deal_size_usd"})
+```
+
+```bash
+python examples/deal_flow.py --since 2026-06-01 -n 25
+python examples/deal_flow.py --since 2026-06-01 --sort=-total_deal_size_usd --min-size 10000000
+python examples/deal_flow.py --since 2026-01-01 --until 2026-03-31 --deal-type seed series_a
+```
+
+> **A market-wide query needs a date lower bound** — `eq`, `in`, `gt`, `gte` or `range`. An upper bound alone (`lte`) is rejected, so the result set is always bounded. To scope to companies you already hold instead, pass a `capital_receiver_uuid` IN filter (up to 1000 — see recipe 11).
+
+> **Deal size comes in three fields.** `deal_size_usd` holds the round size when the deal's provenance is not Reported; `reported_deal_size_usd` holds it when it is. Exactly one of the pair is populated and the other is `null`. `total_deal_size_usd` is the same number without that split, so it is the one to filter, sort and read — sorting on `deal_size_usd` parks every Reported deal at the end of the result set.
+
+> Deal rows carry `capital_receiver_uuid` — the capital receiver profile UUID, the one `capital-receivers/{uuid}/` takes — but no company name, and no batch endpoint maps UUIDs to names (the capital-receivers list has no `uuid` filter field). The script resolves them with one GET per distinct company, so a wide window is slower than the single deals query suggests; `--no-resolve-names` skips it and leaves you the UUID to join on.
+
+> **Taxonomy filters take a key or a display name.** `deal_transaction_type_key`, `allocation_type_key`, `allocation_subtype_key` and `provenance_key` match the stable keys that the response and `reference-data` both carry. Their name-matching siblings (`deal_transaction_type`, `allocation_type`, …) are case-sensitive, so build against the keys.
+
 ---
 
 ## Medium recipes (multi-call, light analysis)
 
-### 5. Thematic market map
+### 6. Thematic market map
 **What:** Landscape of every company in a theme + geography + stage, with valuation and revenue, ranked.
 **Why:** Underpins sector theses and competitive maps.
 **Script:** [`examples/market_map.py`](examples/market_map.py)
@@ -116,7 +144,7 @@ python examples/market_map.py --themes themes_payments --country SGP -n 50
 python examples/market_map.py --themes themes_ai_genai_ml --founded-after 2018
 ```
 
-### 6. Cap table & ownership analysis for a target
+### 7. Cap table & ownership analysis for a target
 **What:** For a company, pull who owns what, percentages, and (for managed cap tables) amounts invested.
 **Why:** Core diligence input.
 **Script:** [`examples/captable.py`](examples/captable.py)
@@ -135,7 +163,7 @@ python examples/captable.py shopback --investors        # investor-centric aggre
 
 > **Check `captable_source.type` first.** `managed` = transaction-derived positions with amounts; `snapshot` = point-in-time percentages only, and `/investors/` returns HTTP 400. The script handles both and picks the right columns.
 
-### 7. Fund benchmarking
+### 8. Fund benchmarking
 **What:** Compare IRR/TVPI/DPI/RVPI across funds by vintage to benchmark a GP or screen funds.
 **Why:** Directly relevant to PE — LP diligence and GP comparison.
 **Script:** [`examples/fund_benchmark.py`](examples/fund_benchmark.py)
@@ -155,7 +183,7 @@ python examples/fund_benchmark.py --vintage-from 2016 --vintage-to 2020 --sort=-
 
 > Performance metrics are **not** on the fund list — fetch them per fund. `net_multiple` is TVPI.
 
-### 8. Co-investor / syndicate network mapping
+### 9. Co-investor / syndicate network mapping
 **What:** Aggregate cap tables across a sector to see who co-invests with whom.
 **Why:** Surfaces syndicate partners and competitive overlap.
 **Script:** [`examples/syndicate_map.py`](examples/syndicate_map.py)
@@ -176,7 +204,7 @@ python examples/syndicate_map.py --themes themes_fintech --country SGP --min-sha
 
 ## Complex recipes (the PE-move differentiators)
 
-### 9. PE buyout / target screening engine
+### 10. PE buyout / target screening engine
 **What:** Screen for mature, profitable, growing businesses by combining financial filters with a per-company profitability check.
 **Why:** The headline use case for a VC moving into PE — shifts sourcing from fast-growth startups to cash-flowing, consolidation-ready businesses.
 **Script:** [`examples/pe_screener.py`](examples/pe_screener.py)
@@ -198,14 +226,20 @@ for h in hits["results"]:
 python examples/pe_screener.py --min-revenue 25000000 --min-growth 0 --country SGP --profitable-only
 ```
 
-### 10. Portfolio / watchlist monitoring
+### 11. Portfolio / watchlist monitoring
 **What:** Track owned and target companies for new rounds, valuation changes, financial updates, and news, and diff against the previous run.
 **Why:** Replaces manual portfolio surveillance — schedule it and alert on deltas.
 **Script:** [`examples/watchlist_monitor.py`](examples/watchlist_monitor.py)
 
 ```python
+# One batch call covers the whole watchlist's deal history; each row carries the
+# company it belongs to, so group client-side by capital_receiver_uuid.
+client.post("capital-receivers/deals/", {
+    "filters": {"all": [
+        {"op": "in", "field": "capital_receiver_uuid", "value": watchlist},
+    ]},
+}, params={"limit": 200, "ordering": "-date"})
 for uuid in watchlist:
-    client.get(f"capital-receivers/{uuid}/deals/")
     client.get(f"capital-receivers/{uuid}/financials/")
     client.get(f"capital-receivers/{uuid}/news/")
 # The script snapshots these to a state file and reports what changed.
@@ -216,7 +250,7 @@ python examples/watchlist_monitor.py c16a0ffd-4dbb-4f7b-a9ca-a3a47f93be67 0e0b00
 python examples/watchlist_monitor.py --file watchlist.txt
 ```
 
-### 11. LP / fundraising intelligence
+### 12. LP / fundraising intelligence
 **What:** Map fund/LP commitment relationships — the commitments into a fund, or the funds an LP backs.
 **Why:** Useful as you scale a PE vehicle.
 **Script:** [`examples/lp_intelligence.py`](examples/lp_intelligence.py)
@@ -233,7 +267,7 @@ python examples/lp_intelligence.py --fund "Bain Capital Asia III"
 
 > The fund-side feed now names the committing LPs: each commitment carries `transactions[]`, and each transaction's `buyer` is the LP (uuid, name, type). The `--fund` view expands these into one row per LP. The `--lp` view is the reverse lens — the funds a given LP backs.
 
-### 12. Auditor / service-provider signal
+### 13. Auditor / service-provider signal
 **What:** Use auditor and professional-services links as a diligence and network cross-check.
 **Why:** A quieter quality/credibility signal.
 **Script:** [`examples/service_providers.py`](examples/service_providers.py)
@@ -269,6 +303,7 @@ python examples/reference_data.py --type countries
 - **Wrap filters in a boolean group.** POST bodies need `{"filters": {"all": [...]}}` (or `any` / `not`) — a bare `{"op", "field", "value"}` is rejected. Operators: `eq`, `ne`, `in`, `nin`, `contains`, `gt`, `gte`, `lt`, `lte`, `range`, `isnull`.
 - **`limit`/`offset`/`ordering` are query params, even for POST.** The JSON body accepts **only** `filters`; sending any other top-level key returns HTTP 400.
 - **Sort server-side where you can.** Pass `ordering` as a query param on list endpoints for a true global top-N; an invalid field returns a 400 listing the valid ones. Fall back to client-side sorting only for rankings the API can't do: values computed per row (IRR, co-investment counts) or read from sub-resources (cap tables, commitments, an allocator's investments — these ignore `ordering`).
+- **Use the batch endpoints instead of a per-company loop.** `POST capital-receivers/deals/` takes a `capital_receiver_uuid` IN filter of up to 1000 UUIDs and returns rows that each carry that UUID, so one paginated call replaces one call per company. A `date` filter alone is also valid there — that is the market-wide query in recipe 5.
 - **Bootstrap reference data.** Cache `GET /reference-data/?type=enums` to get valid filter keys (theme keys, stages, etc.). See the helper above.
 - **Check `captable_source.type`** before reading cap tables (`managed` vs `snapshot`).
 - **Store UUIDs.** There are no integer IDs and no v2→v3 ID mapping.

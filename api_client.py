@@ -103,6 +103,29 @@ class AltClient:
             return resp.json()
         resp.raise_for_status()
 
+    def paginate_post(self, path, body, params=None, page_size=200, max_records=None):
+        """Yield results across pages of a POST filter endpoint.
+
+        The batch endpoints (e.g. ``capital-receivers/deals/``) take ``filters`` in
+        the body and ``limit``/``offset``/``ordering`` as query params. Pass a stable
+        ``ordering`` so rows don't shift between pages as you walk the offsets.
+        """
+        params = dict(params or {})
+        params.setdefault("limit", page_size)
+        offset = 0
+        seen = 0
+        while True:
+            params["offset"] = offset
+            page = self.post(path, body, params=params)
+            for row in page.get("results", []):
+                yield row
+                seen += 1
+                if max_records and seen >= max_records:
+                    return
+            if not page.get("next"):
+                break
+            offset += params["limit"]
+
     def paginate(self, path, params=None, page_size=200, max_records=None):
         """Yield results across pages (GET). Stops at ``max_records`` if given."""
         params = dict(params or {})
