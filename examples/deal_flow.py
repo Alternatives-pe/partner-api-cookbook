@@ -20,14 +20,13 @@ Examples:
     python examples/deal_flow.py --since 2026-01-01 --until 2026-03-31
     python examples/deal_flow.py --since 2026-06-01 --sort=-total_deal_size_usd -n 25
     python examples/deal_flow.py --since 2026-06-01 --deal-type seed series_a
-    python examples/deal_flow.py --since 2026-06-01 --min-size 10000000 --no-resolve-names
+    python examples/deal_flow.py --since 2026-06-01 --min-size 10000000
     python examples/deal_flow.py --since 2026-06-01 --format json -o out/deal_flow.json
 
 Tip: run reference_data.py --categories allocation_deal_types for valid
 --deal-type keys.
 """
 
-import argparse
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -46,19 +45,24 @@ SORT_KEYS = (
 )
 
 
-def row(deal, names):
+def row(deal):
     """One CSV/JSON row per deal.
 
     Deal size comes in three fields: `deal_size_usd` carries the round size when
     the deal's provenance is not Reported, `reported_deal_size_usd` when it is —
     exactly one of the pair is ever populated. `total_deal_size_usd` is the same
     number without that split, so it is the column to filter, sort and read.
+
+    Company identity is inline: every row carries a nested `capital_receiver`
+    block holding the profile UUID and the legal entity's name and registration
+    numbers, so naming a market-wide window costs no extra call.
     """
-    uuid = deal.get("capital_receiver_uuid")
+    reg_numbers = pick(deal, "capital_receiver.legal_entity.registration_numbers") or []
     return {
         "date": deal.get("date"),
-        "company": names.get(uuid),          # empty under --no-resolve-names
-        "company_uuid": uuid,                # the capital receiver profile UUID
+        "company": pick(deal, "capital_receiver.legal_entity.display_name"),
+        "company_uuid": deal.get("capital_receiver_uuid"),   # capital receiver profile UUID
+        "company_reg_number": reg_numbers[0].get("reg_number") if reg_numbers else None,
         "deal_type": deal.get("allocation_deal_type_name"),
         "deal_type_key": deal.get("allocation_deal_type_key"),
         "stage_label": deal.get("self_declared_label"),
@@ -68,28 +72,6 @@ def row(deal, names):
         "transactions": deal.get("count_of_transactions"),
         "deal_uuid": deal.get("uuid"),
     }
-
-
-def resolve_names(client, uuids):
-    """Company display names for the deals we fetched.
-
-    One GET per distinct company. The deal row carries `capital_receiver_uuid` —
-    the capital receiver profile UUID, which is what `capital-receivers/{uuid}/`
-    takes — but no name, and no batch endpoint maps UUIDs to names: the
-    capital-receivers list has no `uuid` filter field, and the batch actions
-    (deals, financials, news, deal-share-types, roles, aum, performance) return
-    none of them a display name.
-
-    Cheap on a normal page and linear in distinct companies, so `--no-resolve-names`
-    is there for wide windows where you only want the UUIDs to join on.
-    """
-    names = {}
-    for i, uuid in enumerate(uuids, 1):
-        detail = client.get(f"capital-receivers/{uuid}/")
-        names[uuid] = pick(detail, "legal_entity.display_name")
-        if i % 25 == 0:
-            print(f"  resolved {i}/{len(uuids)} company names...", file=sys.stderr)
-    return names
 
 
 def main():
@@ -109,10 +91,6 @@ def main():
     parser.add_argument(
         "--min-size", type=float, metavar="USD",
         help="minimum total deal size in USD",
-    )
-    parser.add_argument(
-        "--resolve-names", action=argparse.BooleanOptionalAction, default=True,
-        help="look up company names (one extra call per distinct company)",
     )
     args = parser.parse_args()
 
@@ -168,14 +146,7 @@ def main():
             raise SystemExit(f"API rejected the query (HTTP {resp.status_code}): {detail}")
         raise
 
-    names = {}
-    if args.resolve_names and deals:
-        uuids = [u for u in dict.fromkeys(d.get("capital_receiver_uuid") for d in deals) if u]
-        print(f"Resolving {len(uuids)} company names "
-              f"(one call each; --no-resolve-names to skip)...", file=sys.stderr)
-        names = resolve_names(client, uuids)
-
-    records = [row(d, names) for d in deals]
+    records = [row(d) for d in deals]
     window = f"{since} to {args.until}" if args.until else f"{since} onward"
     print(f"{len(records)} deals ({window}), sorted by {sort}.", file=sys.stderr)
     emit(records, fmt=args.format, output=args.output)

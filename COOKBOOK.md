@@ -116,7 +116,7 @@ python examples/deal_flow.py --since 2026-01-01 --until 2026-03-31 --deal-type s
 
 > **Deal size comes in three fields.** `deal_size_usd` holds the round size when the deal's provenance is not Reported; `reported_deal_size_usd` holds it when it is. Exactly one of the pair is populated and the other is `null`. `total_deal_size_usd` is the same number without that split, so it is the one to filter, sort and read — sorting on `deal_size_usd` parks every Reported deal at the end of the result set.
 
-> Deal rows carry `capital_receiver_uuid` — the capital receiver profile UUID, the one `capital-receivers/{uuid}/` takes — but no company name, and no batch endpoint maps UUIDs to names (the capital-receivers list has no `uuid` filter field). The script resolves them with one GET per distinct company, so a wide window is slower than the single deals query suggests; `--no-resolve-names` skips it and leaves you the UUID to join on.
+> **Deal rows carry the company inline.** Each row has a nested `capital_receiver` block: `uuid` (the capital receiver profile UUID, the one `capital-receivers/{uuid}/` takes) plus `legal_entity` with its own `uuid`, `display_name` and `registration_numbers`. So a market-wide window is labelled from the one deals query — no per-company lookup to resolve names. The flat `capital_receiver_uuid` is still on every row for consumers already joining on it.
 
 > **Taxonomy filters take a key or a display name.** `deal_transaction_type_key`, `allocation_type_key`, `allocation_subtype_key` and `provenance_key` match the stable keys that the response and `reference-data` both carry. Their name-matching siblings (`deal_transaction_type`, `allocation_type`, …) are case-sensitive, so build against the keys.
 
@@ -233,7 +233,8 @@ python examples/pe_screener.py --min-revenue 25000000 --min-growth 0 --country S
 
 ```python
 # One batch call covers the whole watchlist's deal history; each row carries the
-# company it belongs to, so group client-side by capital_receiver_uuid.
+# company it belongs to, so group client-side by capital_receiver_uuid — and read
+# the company's name off the row's nested capital_receiver block, not a second call.
 client.post("capital-receivers/deals/", {
     "filters": {"all": [
         {"op": "in", "field": "capital_receiver_uuid", "value": watchlist},
@@ -303,7 +304,7 @@ python examples/reference_data.py --type countries
 - **Wrap filters in a boolean group.** POST bodies need `{"filters": {"all": [...]}}` (or `any` / `not`) — a bare `{"op", "field", "value"}` is rejected. Operators: `eq`, `ne`, `in`, `nin`, `contains`, `gt`, `gte`, `lt`, `lte`, `range`, `isnull`.
 - **`limit`/`offset`/`ordering` are query params, even for POST.** The JSON body accepts **only** `filters`; sending any other top-level key returns HTTP 400.
 - **Sort server-side where you can.** Pass `ordering` as a query param on list endpoints for a true global top-N; an invalid field returns a 400 listing the valid ones. Fall back to client-side sorting only for rankings the API can't do: values computed per row (IRR, co-investment counts) or read from sub-resources (cap tables, commitments, an allocator's investments — these ignore `ordering`).
-- **Use the batch endpoints instead of a per-company loop.** `POST capital-receivers/deals/` takes a `capital_receiver_uuid` IN filter of up to 1000 UUIDs and returns rows that each carry that UUID, so one paginated call replaces one call per company. A `date` filter alone is also valid there — that is the market-wide query in recipe 5.
+- **Use the batch endpoints instead of a per-company loop.** `POST capital-receivers/deals/` takes a `capital_receiver_uuid` IN filter of up to 1000 UUIDs and returns rows that each carry that UUID, so one paginated call replaces one call per company. Those rows also carry the company inline under `capital_receiver` (name and registration numbers), so there is no name-resolution pass afterwards. A `date` filter alone is also valid there — that is the market-wide query in recipe 5.
 - **Bootstrap reference data.** Cache `GET /reference-data/?type=enums` to get valid filter keys (theme keys, stages, etc.). See the helper above.
 - **Check `captable_source.type`** before reading cap tables (`managed` vs `snapshot`).
 - **Store UUIDs.** There are no integer IDs and no v2→v3 ID mapping.
