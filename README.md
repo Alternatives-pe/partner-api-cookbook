@@ -60,6 +60,7 @@ python run_all.py
 | `examples/watchlist_monitor.py` | Portfolio / watchlist monitoring |
 | `examples/lp_intelligence.py` | LP / fundraising intelligence |
 | `examples/service_providers.py` | Auditor / service-provider signal |
+| `examples/incremental_sync.py` | Incremental sync on `aggregate_updated_at` (keyset paging) |
 | `examples/reference_data.py` | Helper: list valid filter keys (themes, deal types, …) |
 
 ## Common switches

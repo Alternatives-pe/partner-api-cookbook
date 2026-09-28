@@ -232,6 +232,12 @@ python examples/pe_screener.py --min-revenue 25000000 --min-growth 0 --country S
 **Script:** [`examples/watchlist_monitor.py`](examples/watchlist_monitor.py)
 
 ```python
+# One batch call reads every company's change watermark. aggregate_updated_at moves
+# when the company or anything shown on it changes, so a company whose value (and
+# deal signals) match the last run is not re-fetched at all.
+client.post("capital-receivers/", {
+    "filters": {"all": [{"op": "in", "field": "uuid", "value": watchlist}]},
+}, params={"limit": 1000, "ordering": "uuid"})
 # One batch call covers the whole watchlist's deal history; each row carries the
 # company it belongs to, so group client-side by capital_receiver_uuid — and read
 # the company's name off the row's nested capital_receiver block, not a second call.
@@ -240,7 +246,7 @@ client.post("capital-receivers/deals/", {
         {"op": "in", "field": "capital_receiver_uuid", "value": watchlist},
     ]},
 }, params={"limit": 200, "ordering": "-date"})
-for uuid in watchlist:
+for uuid in may_have_changed:
     client.get(f"capital-receivers/{uuid}/financials/")
     client.get(f"capital-receivers/{uuid}/news/")
 # The script snapshots these to a state file and reports what changed.
@@ -283,6 +289,32 @@ python examples/service_providers.py --search Deloitte
 python examples/service_providers.py --service-type service_provider_type_audit -n 50
 ```
 
+### 14. Incremental sync
+**What:** Pull only the companies, investors, funds, people, or service providers that changed since the last run, and keep a high-water mark for the next one.
+**Why:** Keeps a local copy current for a fraction of the requests a full re-fetch costs.
+**Script:** [`examples/incremental_sync.py`](examples/incremental_sync.py)
+
+```python
+# aggregate_updated_at moves when the record or anything shown on it changes.
+# Page by keyset on (aggregate_updated_at, uuid), never by offset: a record edited
+# mid-pull jumps to the end and an offset walk would skip a row.
+for record in client.paginate_changed("capital-receivers/", since="2026-09-24T00:00:00Z"):
+    store[record["uuid"]] = record   # a record edited mid-pull comes round twice; the later copy wins
+# Each page after the first asks for everything after the last row's (value, uuid):
+# {"all": [{"op": "gte", "field": "aggregate_updated_at", "value": V},
+#          {"any": [{"op": "gt", "field": "aggregate_updated_at", "value": V},
+#                   {"op": "gt", "field": "uuid", "value": U}]}]}
+# with params={"ordering": "aggregate_updated_at,uuid", "limit": 1000}
+```
+
+```bash
+python examples/incremental_sync.py                    # companies changed since the last run
+python examples/incremental_sync.py --entity funds --days 30
+python examples/incremental_sync.py --since 2026-09-24T00:00:00Z --no-save
+```
+
+> Start each pull a few minutes before the last high-water mark (`--overlap`, default 5): two changes saved at nearly the same moment can become visible in the opposite order to their timestamps. The value can also move when only data the API does not show changed, and removals are never reported, so compare the UUIDs you hold against a full pull now and then. See [Incremental Sync](https://docs.altdmp.io/#incremental-sync).
+
 ---
 
 ## Helper — reference data
@@ -304,6 +336,7 @@ python examples/reference_data.py --type countries
 - **Wrap filters in a boolean group.** POST bodies need `{"filters": {"all": [...]}}` (or `any` / `not`) — a bare `{"op", "field", "value"}` is rejected. Operators: `eq`, `ne`, `in`, `nin`, `contains`, `gt`, `gte`, `lt`, `lte`, `range`, `isnull`.
 - **`limit`/`offset`/`ordering` are query params, even for POST.** The JSON body accepts **only** `filters`; sending any other top-level key returns HTTP 400.
 - **Sort server-side where you can.** Pass `ordering` as a query param on list endpoints for a true global top-N; an invalid field returns a 400 listing the valid ones. Fall back to client-side sorting only for rankings the API can't do: values computed per row (IRR, co-investment counts) or read from sub-resources (cap tables, commitments, an allocator's investments — these ignore `ordering`).
+- **Sync incrementally on `aggregate_updated_at`.** Filter the list endpoints on it from just before your last run and page by keyset on `(aggregate_updated_at, uuid)` rather than by offset, as recipe 14 and `AltClient.paginate_changed()` do. `last_updated_at` is deprecated: it covers only the profile and its legal entity, and cannot be filtered.
 - **Use the batch endpoints instead of a per-company loop.** `POST capital-receivers/deals/` takes a `capital_receiver_uuid` IN filter of up to 1000 UUIDs and returns rows that each carry that UUID, so one paginated call replaces one call per company. Those rows also carry the company inline under `capital_receiver` (name and registration numbers), so there is no name-resolution pass afterwards. A `date` filter alone is also valid there — that is the market-wide query in recipe 5.
 - **Bootstrap reference data.** Cache `GET /reference-data/?type=enums` to get valid filter keys (theme keys, stages, etc.). See the helper above.
 - **Check `captable_source.type`** before reading cap tables (`managed` vs `snapshot`).

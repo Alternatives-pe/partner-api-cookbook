@@ -6,9 +6,16 @@ news. Each run snapshots a few signals per company, compares against the previou
 run's state file, and reports what changed — so you can run it on a schedule and
 alert on deltas.
 
+Only companies that may have changed are re-fetched. One batch call reads each
+company's `aggregate_updated_at`, which moves when the company or anything shown
+on it changes (financials, valuations, transactions, news, ...). A company whose
+watermark and deal signals both match the previous run keeps its saved
+snapshot, which saves three calls per unchanged company.
+
 Endpoints:
+    POST capital-receivers/                once for the whole watchlist (watermarks)
     POST capital-receivers/deals/          once for the whole watchlist
-    GET  capital-receivers/{uuid}/         per company
+    GET  capital-receivers/{uuid}/         per company that may have changed
     GET  capital-receivers/{uuid}/financials/
     GET  capital-receivers/{uuid}/news/
 
@@ -29,8 +36,43 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from api_client import AltClient, build_parser, emit, pick  # noqa: E402
 
-# The batch deals endpoint takes at most 1000 company UUIDs per request.
+# The batch deals endpoint takes at most 1000 company UUIDs per request; the
+# watermark lookup uses the same chunk size.
 MAX_BATCH_UUIDS = 1000
+
+
+def fetch_watermarks(client, uuids):
+    """`aggregate_updated_at` per company, in one paginated call per 1000 UUIDs.
+
+    A company missing from the result is unpublished or deleted, so it has no
+    entry here.
+    """
+    marks = {}
+    for start in range(0, len(uuids), MAX_BATCH_UUIDS):
+        chunk = uuids[start:start + MAX_BATCH_UUIDS]
+        body = {"filters": {"all": [{"op": "in", "field": "uuid", "value": chunk}]}}
+        for company in client.paginate_post(
+            "capital-receivers/", body, params={"ordering": "uuid"}, page_size=1000
+        ):
+            marks[company["uuid"]] = company.get("aggregate_updated_at")
+    return marks
+
+
+def unchanged(prev, watermark, deals):
+    """True when nothing this script watches can have moved since ``prev``.
+
+    The watermark covers the detail, financials and news signals. Deals are
+    checked too, because editing only a funding round's own details does not
+    move the company's watermark, while the deal count and date come from the
+    batch call anyway.
+    """
+    return (
+        prev is not None
+        and watermark is not None
+        and prev.get("aggregate_updated_at") == watermark
+        and prev.get("deal_count") == deals.get("deal_count")
+        and prev.get("latest_deal_date") == deals.get("latest_deal_date")
+    )
 
 
 def fetch_deals(client, uuids):
@@ -65,7 +107,7 @@ def fetch_deals(client, uuids):
     return index
 
 
-def snapshot(client, uuid, deals):
+def snapshot(client, uuid, deals, watermark):
     """Capture a small set of monitorable signals for one company.
 
     ``deals`` is this company's entry from fetch_deals() — already fetched for the
@@ -79,6 +121,7 @@ def snapshot(client, uuid, deals):
     return {
         "uuid": uuid,
         "name": pick(detail, "legal_entity.display_name"),
+        "aggregate_updated_at": watermark,
         "latest_valuation_usd": pick(detail, "funding.latest_valuation_usd"),
         "latest_stage": pick(detail, "funding.latest_investment_stage_name"),
         "deal_count": deals.get("deal_count"),
@@ -130,19 +173,28 @@ def main():
     if state_path.exists():
         prev_state = {r["uuid"]: r for r in json.loads(state_path.read_text())}
 
+    marks = fetch_watermarks(client, uuids)
     deals_index = fetch_deals(client, uuids)
 
-    rows, new_state = [], []
+    rows, new_state, skipped = [], [], 0
     for uuid in uuids:
-        cur = snapshot(client, uuid, deals_index.get(uuid, {}))
-        changes = diff(prev_state.get(uuid), cur)
+        prev = prev_state.get(uuid)
+        deals = deals_index.get(uuid, {})
+        watermark = marks.get(uuid)
+        if unchanged(prev, watermark, deals):
+            cur, changes = prev, []
+            skipped += 1
+        else:
+            cur = snapshot(client, uuid, deals, watermark)
+            changes = diff(prev, cur)
         new_state.append(cur)
         rows.append({**cur, "changes": changes or ["no change"]})
 
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(new_state, indent=2, default=str))
     changed = sum(1 for r in rows if r["changes"] != ["no change"])
-    print(f"Monitored {len(rows)} companies; {changed} with changes. "
+    print(f"Monitored {len(rows)} companies; {changed} with changes; "
+          f"{skipped} unchanged since the last run and not re-fetched. "
           f"State saved to {state_path}.", file=sys.stderr)
     emit(rows, fmt=args.format, output=args.output)
 

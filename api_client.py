@@ -7,7 +7,8 @@ Provides:
     in every example:
       * read the API key from the environment (never hard-code it)
       * exchange the key for a bearer token and cache it (valid 24h)
-      * reuse one session, page with limit/offset
+      * reuse one session, page with limit/offset, or by keyset on
+        (aggregate_updated_at, uuid) for an incremental sync (paginate_changed)
       * on 429, wait the cooldown the response asks for, then retry
   - CLI + output helpers shared across the cookbook scripts:
       * add_common_args() / build_parser() — standard --limit/--sort/--format/-o
@@ -208,6 +209,8 @@ class AltClient:
         The batch endpoints (e.g. ``capital-receivers/deals/``) take ``filters`` in
         the body and ``limit``/``offset``/``ordering`` as query params. Pass a stable
         ``ordering`` so rows don't shift between pages as you walk the offsets.
+        Don't use this to page by ``aggregate_updated_at``: that value changes
+        mid-pull, so an offset walk can skip a row. Use paginate_changed().
         """
         params = dict(params or {})
         params.setdefault("limit", page_size)
@@ -242,6 +245,48 @@ class AltClient:
             if not page.get("next"):
                 break
             offset += params["limit"]
+
+    def paginate_changed(self, path, since, filters=None, page_size=1000, max_records=None):
+        """Yield every record on a list endpoint that changed at or after ``since``.
+
+        Works on the five list endpoints (capital-receivers, capital-allocators,
+        funds, people, service-providers). ``since`` is an ISO 8601 date-time
+        with a UTC offset, e.g. ``"2026-09-24T00:00:00Z"``; ``filters`` is an
+        optional list of extra conditions ANDed onto the window.
+
+        Pages by keyset on (aggregate_updated_at, uuid) instead of by offset. The
+        watermark changes while you page: a record edited mid-pull jumps to the
+        end, every later row moves up one place, and the next offset page skips
+        one. Asking for "everything after the last row's (value, uuid)" cannot
+        skip. The uuid half matters because one change can stamp many records
+        with the same instant.
+
+        A record edited mid-pull comes round twice, and the later copy is the
+        newer one, so store rows by uuid and let the later one win.
+        """
+        params = {"ordering": "aggregate_updated_at,uuid", "limit": page_size}
+        base = list(filters or [])
+        window = [{"op": "gte", "field": "aggregate_updated_at", "value": since}]
+        yielded = 0
+        while True:
+            body = {"filters": {"all": base + window}}
+            rows = self.post(path, body, params=params).get("results", [])
+            for row in rows:
+                yield row
+                yielded += 1
+                if max_records and yielded >= max_records:
+                    return
+            if len(rows) < page_size:
+                return
+            last = rows[-1]
+            value = last["aggregate_updated_at"]
+            window = [
+                {"op": "gte", "field": "aggregate_updated_at", "value": value},
+                {"any": [
+                    {"op": "gt", "field": "aggregate_updated_at", "value": value},
+                    {"op": "gt", "field": "uuid", "value": last["uuid"]},
+                ]},
+            ]
 
 
 # --------------------------------------------------------------------------- #

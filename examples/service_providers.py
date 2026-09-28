@@ -32,7 +32,9 @@ def row(sp):
         "service_types": [t.get("name") for t in sp.get("service_types") or []],
         "domicile_country": pick(le, "domicile_country.name"),
         "registration_number": (le.get("registration_numbers") or [{}])[0].get("reg_number"),
-        "last_updated_at": sp.get("last_updated_at"),
+        # aggregate_updated_at replaces the deprecated last_updated_at: it also
+        # moves when data shown on the record changes, not only the profile row.
+        "aggregate_updated_at": sp.get("aggregate_updated_at"),
     }
 
 
@@ -47,7 +49,7 @@ def main():
 
     # Sort server-side via `ordering` (query param); the country filter below
     # only narrows the ordered rows, so their order is preserved.
-    params = {"limit": args.limit, "ordering": args.sort or "name"}
+    params = {"limit": args.limit, "ordering": args.sort or "display_name"}
     if args.service_type:
         params["service_type"] = args.service_type
     if args.search:

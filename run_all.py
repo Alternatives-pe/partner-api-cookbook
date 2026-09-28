@@ -35,6 +35,7 @@ RECIPES = [
     ("watchlist_monitor",    ["c16a0ffd-4dbb-4f7b-a9ca-a3a47f93be67"]),
     ("lp_intelligence",      ["--lp", "Wavemaker", "-n", "5"]),
     ("service_providers",    ["--search", "Deloitte", "-n", "5"]),
+    ("incremental_sync",     ["--days", "1", "-n", "5", "--no-save"]),
     ("reference_data",       ["--categories", "themes", "-n", "5"]),
 ]
 
