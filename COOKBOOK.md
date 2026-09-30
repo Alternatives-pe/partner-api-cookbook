@@ -110,11 +110,14 @@ client.post("capital-receivers/deals/", {
 python examples/deal_flow.py --since 2026-06-01 -n 25
 python examples/deal_flow.py --since 2026-06-01 --sort=-total_deal_size_usd --min-size 10000000
 python examples/deal_flow.py --since 2026-01-01 --until 2026-03-31 --deal-type seed series_a
+python examples/deal_flow.py --since 2026-06-01 --sort=-no_shares_sold -n 25
 ```
 
 > **A market-wide query needs a date lower bound** — `eq`, `in`, `gt`, `gte` or `range`. An upper bound alone (`lte`) is rejected, so the result set is always bounded. To scope to companies you already hold instead, pass a `capital_receiver_uuid` IN filter (up to 1000 — see recipe 11).
 
 > **Deal size comes in three fields.** `deal_size_usd` holds the round size when the deal's provenance is not Reported; `reported_deal_size_usd` holds it when it is. Exactly one of the pair is populated and the other is `null`. `total_deal_size_usd` is the same number without that split, so it is the one to filter, sort and read — sorting on `deal_size_usd` parks every Reported deal at the end of the result set.
+
+> **Secondary share counts are on the row.** `no_shares_bought` and `no_shares_sold` total the shares in the deal's Secondary transactions that name a buyer or a seller. Both are `null` on a deal with no such transaction, so sorting on `-no_shares_sold` ranks deals by shares changing hands and parks primary-only rounds at the end — the same null-sorts-last behavior as `deal_size_usd`. Expect M&A and buyouts near the top, not only secondary rounds: an acquisition is recorded as Secondary transactions. Add `--deal-type` to narrow it.
 
 > **Deal rows carry the company inline.** Each row has a nested `capital_receiver` block: `uuid` (the capital receiver profile UUID, the one `capital-receivers/{uuid}/` takes) plus `legal_entity` with its own `uuid`, `display_name` and `registration_numbers`. So a market-wide window is labelled from the one deals query — no per-company lookup to resolve names. The flat `capital_receiver_uuid` is still on every row for consumers already joining on it.
 

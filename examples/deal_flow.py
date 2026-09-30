@@ -21,6 +21,7 @@ Examples:
     python examples/deal_flow.py --since 2026-06-01 --sort=-total_deal_size_usd -n 25
     python examples/deal_flow.py --since 2026-06-01 --deal-type seed series_a
     python examples/deal_flow.py --since 2026-06-01 --min-size 10000000
+    python examples/deal_flow.py --since 2026-06-01 --sort=-no_shares_sold -n 25
     python examples/deal_flow.py --since 2026-06-01 --format json -o out/deal_flow.json
 
 Tip: run reference_data.py --categories allocation_deal_types for valid
@@ -41,7 +42,8 @@ from api_client import AltClient, build_parser, emit, pick  # noqa: E402
 # the one that ranks every deal together. See "Deal size" below.
 SORT_KEYS = (
     "date", "total_deal_size_usd", "deal_size_usd", "reported_deal_size_usd",
-    "post_money_valuation_usd", "no_shares_issued", "provenance",
+    "post_money_valuation_usd", "no_shares_issued", "no_shares_bought",
+    "no_shares_sold", "provenance",
 )
 
 
@@ -52,6 +54,10 @@ def row(deal):
     the deal's provenance is not Reported, `reported_deal_size_usd` when it is —
     exactly one of the pair is ever populated. `total_deal_size_usd` is the same
     number without that split, so it is the column to filter, sort and read.
+
+    `no_shares_bought` / `no_shares_sold` total the shares in the deal's
+    Secondary transactions that name a buyer / seller, and are null on a deal
+    with no such transaction — so a primary-only round has neither.
 
     Company identity is inline: every row carries a nested `capital_receiver`
     block holding the profile UUID and the legal entity's name and registration
@@ -68,6 +74,8 @@ def row(deal):
         "stage_label": deal.get("self_declared_label"),
         "total_deal_size_usd": deal.get("total_deal_size_usd"),
         "post_money_valuation_usd": deal.get("post_money_valuation_usd"),
+        "shares_bought": deal.get("no_shares_bought"),
+        "shares_sold": deal.get("no_shares_sold"),
         "provenance": pick(deal, "provenance.name"),
         "transactions": deal.get("count_of_transactions"),
         "deal_uuid": deal.get("uuid"),
