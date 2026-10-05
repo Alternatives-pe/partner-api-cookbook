@@ -347,11 +347,12 @@ def sort_records(records, sort):
     """Sort a list of dict records client-side by a (dotted) key.
 
     Prefix the key with '-' for descending. Missing/None values always sort
-    last. Most list endpoints now support server-side ``ordering`` (pass it as
-    a query param for a true global top-N), so prefer that where you can. Use
-    this helper for rankings the API can't do for you: values computed
-    client-side (IRR, co-investment counts) or read from sub-resources
-    (cap tables, commitments), and endpoints without a working ``ordering``.
+    last. List and sub-resource endpoints support server-side ``ordering``
+    (pass it as a query param for a true global top-N), so prefer that where
+    you can. Use this helper for rankings the API can't do for you: values
+    computed client-side (IRR, co-investment counts) or rows from fixed-order
+    routes (cap tables, a company's investors), which return 400 for any
+    ``ordering``.
     Note: this orders only the rows you fetched, not the full result set.
     """
     if not sort:

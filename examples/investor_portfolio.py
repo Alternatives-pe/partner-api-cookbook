@@ -6,7 +6,8 @@ direct investments — what they back and where they concentrate.
 
 Endpoints:
     GET capital-allocators/?search=...               (resolve the firm)
-    GET capital-allocators/{uuid}/investments/       (portfolio companies)
+    GET capital-allocators/{uuid}/investments/       (portfolio companies, sorted
+                                                      server-side via `ordering`)
 
 Examples:
     python examples/investor_portfolio.py Wavemaker
@@ -19,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from api_client import AltClient, build_parser, emit, sort_records  # noqa: E402
+from api_client import AltClient, build_parser, emit  # noqa: E402
 
 
 def main():
@@ -45,11 +46,13 @@ def main():
         label = matches[0].get("display_name")
         print(f"Resolved '{args.name}' -> {label} ({uuid})", file=sys.stderr)
 
+    # Sort server-side via `ordering` (query param) so -n gives a true top-N
+    # across the whole portfolio, not just the first page fetched.
     rows = list(client.paginate(
         f"capital-allocators/{uuid}/investments/",
-        params={"limit": args.limit}, max_records=args.limit,
+        params={"limit": args.limit, "ordering": args.sort or "-total_invested_usd"},
+        max_records=args.limit,
     ))
-    rows = sort_records(rows, args.sort or "-total_invested_usd")
     print(f"{label}: {len(rows)} portfolio companies (showing up to {args.limit}).",
           file=sys.stderr)
     emit(rows, fmt=args.format, output=args.output)

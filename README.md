@@ -68,7 +68,7 @@ python run_all.py
 Every script accepts the same options (see `--help` on any of them):
 
 - `-n, --limit` — max rows to fetch / return.
-- `-s, --sort` — ordering field; prefix `-` for descending. Pass with `=`, e.g. `--sort=-latest_valuation_usd` (argparse otherwise treats the leading `-` as a flag). Recipes that hit a list endpoint sort **server-side** (a true global top-N); a few that rank on computed metrics or sub-resources sort client-side over the fetched rows.
+- `-s, --sort` — ordering field; prefix `-` for descending. Pass with `=`, e.g. `--sort=-latest_valuation_usd` (argparse otherwise treats the leading `-` as a flag). Recipes that hit a list or sub-resource endpoint sort **server-side** (a true global top-N); a few that rank on computed metrics or read fixed-order routes (cap tables) sort client-side over the fetched rows.
 - `-f, --format` — `csv` (default) or `json`.
 - `-o, --output` — write to a file instead of stdout (progress goes to stderr).
 
