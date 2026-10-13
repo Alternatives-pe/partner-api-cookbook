@@ -329,6 +329,7 @@ Discover the valid filter keys (theme keys, deal types, service types, countries
 python examples/reference_data.py --categories themes
 python examples/reference_data.py --categories themes service_types allocation_deal_types
 python examples/reference_data.py --type countries
+python examples/reference_data.py --type industries   # sector / group / leaf codes for the industry filters
 ```
 
 ---
@@ -337,6 +338,7 @@ python examples/reference_data.py --type countries
 
 - **Cache the token.** Bearer tokens from `POST /v3/token/issue/` last 24h — reuse, don't re-issue per call. `AltClient` does this for you.
 - **Wrap filters in a boolean group.** POST bodies need `{"filters": {"all": [...]}}` (or `any` / `not`) — a bare `{"op", "field", "value"}` is rejected. Operators: `eq`, `ne`, `in`, `nin`, `contains`, `gt`, `gte`, `lt`, `lte`, `range`, `isnull`.
+- **Industry codes match down the tree, never up.** `industries_codes` (capital receivers) and `preferred_industries_codes` (capital allocators, funds) take 2-character sector, 4-character group and 6-character leaf codes, each starting with its parent's. A code matches itself and everything beneath it: `"16"` returns records tagged `16`, `1601` or any `16xxxx`. It never matches a parent: `"160101"` skips a record tagged only `16`, because that record isn't classified down to hospitals. Sending every child of a node is the same as sending the node, so send the parent code when you mean the whole branch. `eq`, `in` and `contains` all work this way on whole codes (`"1001"` never matches `041001`), and `ne`, `nin` and `ncontains` are their exact complement. Until 0.49 these fields matched flat, so a saved industry filter now returns more rows for a parent code and fewer for a `contains` that relied on substring matching. List the codes with `reference_data.py --type industries`.
 - **`limit`/`offset`/`ordering` are query params, even for POST.** The JSON body accepts **only** `filters`; sending any other top-level key returns HTTP 400.
 - **Sort server-side where you can.** Pass `ordering` as a query param on list endpoints for a true global top-N; an invalid field returns a 400 listing the valid ones. This holds for sub-resource lists too (an allocator's investments and commitments, a fund's commitments and performance, news). Fixed-order routes — cap tables, `financials/`, a company's `investors/`, a person's `roles/`, `reference-data/`, and the batch `aum/`, `performance/`, `news/`, `roles/`, `financials/` and `deal-share-types/` routes — return 400 for any `ordering`, so leave it off there. Fall back to client-side sorting only for rankings the API can't do: values computed per row (IRR, co-investment counts) or rows from a fixed-order route.
 - **Sync incrementally on `aggregate_updated_at`.** Filter the list endpoints on it from just before your last run and page by keyset on `(aggregate_updated_at, uuid)` rather than by offset, as recipe 14 and `AltClient.paginate_changed()` do. `last_updated_at` is deprecated: it covers only the profile and its legal entity, and cannot be filtered.
