@@ -19,6 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PY = sys.executable
+# Matches api_client.CALL_LOG_PREFIX, the start of each API-call log line.
+CALL_LOG_PREFIX = "→ "
 
 # A representative, deliberately small invocation for each recipe.
 RECIPES = [

@@ -271,11 +271,11 @@ client.get(f"capital-allocators/{lp_uuid}/commitments/") # funds a given LP back
 ```
 
 ```bash
-python examples/lp_intelligence.py --lp Wavemaker
+python examples/lp_intelligence.py --lp GIC
 python examples/lp_intelligence.py --fund "Bain Capital Asia III"
 ```
 
-> The fund-side feed now names the committing LPs: each commitment carries `transactions[]`, and each transaction's `buyer` is the LP (uuid, name, type). The `--fund` view expands these into one row per LP. The `--lp` view is the reverse lens — the funds a given LP backs.
+> The fund-side feed now names the committing LPs: each commitment carries `transactions[]`, and each transaction's `buyer` is the LP (uuid, name, type). The `--fund` view expands these into one row per LP. The `--lp` view is the reverse lens — the funds a given LP backs. Only a firm's Commitment (LP) profile has commitments (its Equity or Debt profile returns an empty page), so `--lp` searches with the `preferred_allocation_type_key` filter set to `allocation_type_commitment` and prefers an exact name match.
 
 ### 13. Auditor / service-provider signal
 **What:** Use auditor and professional-services links as a diligence and network cross-check.

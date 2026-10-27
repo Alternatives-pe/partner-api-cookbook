@@ -11,10 +11,14 @@ Use it when raising a fund to profile LPs and the funds they back.
 
 Endpoints:
     GET funds/{uuid}/commitments/               (LPs in a fund)
+    POST capital-allocators/?search=...         (resolve the LP's Commitment profile)
     GET capital-allocators/{uuid}/commitments/  (commitments made by an LP)
 
+Only a firm's Commitment (LP) profile carries its commitments; its Equity or
+Debt profile returns an empty page. --lp therefore searches LP profiles only.
+
 Examples:
-    python examples/lp_intelligence.py --lp Wavemaker
+    python examples/lp_intelligence.py --lp GIC
     python examples/lp_intelligence.py --fund "Bain Capital Asia III"
     python examples/lp_intelligence.py --fund-uuid 50280c30-d626-44db-8aff-7cdf1eb323bb
     python examples/lp_intelligence.py --lp GIC --format json -o out/gic_commitments.json
@@ -32,6 +36,24 @@ def resolve(client, path, query, name_field="display_name"):
     if not res:
         return None, None
     return res[0]["uuid"], res[0].get(name_field)
+
+
+def resolve_lp(client, query):
+    """Resolve an LP name to its Commitment (LP) profile.
+
+    Search matches substrings ("GIC" also hits "Lumen Strategic Capital") and
+    the list sorts by name, so the first hit is often the wrong firm. Look at
+    the top LP profiles and prefer an exact name match.
+    """
+    body = {"filters": {"all": [{"op": "eq", "field": "preferred_allocation_type_key",
+                                 "value": "allocation_type_commitment"}]}}
+    res = client.post("capital-allocators/", body,
+                      params={"search": query, "limit": 10}).get("results", [])
+    if not res:
+        return None, None
+    hit = next((r for r in res if (r.get("display_name") or "").casefold() == query.casefold()),
+               res[0])
+    return hit["uuid"], hit.get("display_name")
 
 
 def fund_lp_rows(commitment):
@@ -99,7 +121,7 @@ def main():
         print(f"Fund {label}: {len(rows)} LP commitment(s).", file=sys.stderr)
     elif args.lp or args.lp_uuid:
         uuid, label = (args.lp_uuid, args.lp_uuid) if args.lp_uuid else \
-            resolve(client, "capital-allocators/", args.lp)
+            resolve_lp(client, args.lp)
         if not uuid:
             print(f"No LP matching '{args.lp}'.", file=sys.stderr)
             return
