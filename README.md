@@ -86,6 +86,7 @@ python examples/fund_benchmark.py --vintage-from 2018 --format json -o out/funds
 - **Store UUIDs** — there are no integer IDs.
 - **Honor the rate-limit cooldown.** A `429` carries `Retry-After` (seconds until the rolling window frees capacity, repeated in the body as `retry_after_seconds`) plus `scope` and `dimension` naming which limit you hit. `AltClient` waits exactly that long and retries — up to `ALT_MAX_RETRY_WAIT` seconds (default 120), after which it raises `RateLimitExceeded`. Retrying sooner than asked just burns another slot in the window.
 - **See what each recipe asks for.** `AltClient` prints every data call to stderr as `→ METHOD URL` plus the JSON body for a `POST`, so the CSV or JSON on stdout stays clean. It never prints headers or the token request, so the bearer token and API key stay out of the log. Set `ALT_LOG_CALLS=0` to turn it off.
+- **Quote `X-Request-ID` when reporting a problem.** Every response carries it; support uses it to find the exact call in the API's logs. `AltClient` adds it to every error it raises.
 - **Handle the other errors:** `403` = subscription/entitlement gap, `401` = bad or expired token.
 - **Money fields are USD-normalized** (`_usd` suffix) — no client-side FX needed.
 

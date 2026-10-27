@@ -347,5 +347,6 @@ python examples/reference_data.py --type industries   # sector / group / leaf co
 - **Check `captable_source.type`** before reading cap tables (`managed` vs `snapshot`).
 - **Store UUIDs.** There are no integer IDs and no v2→v3 ID mapping.
 - **Wait out a `429` for exactly as long as the API asks.** The response carries `Retry-After` in seconds — the time until the rolling window frees capacity — mirrored in the body as `retry_after_seconds`, alongside the `scope` and `dimension` that were limited (e.g. `scope=token.issue, dimension=ip`). `AltClient` sleeps for that and retries; a fixed backoff that fires early just consumes another slot. Token issuance has its own scope, so a job that starts a fresh process per entity hits it long before any data call does.
+- **Quote `X-Request-ID` when reporting a problem.** Every response carries it, and it is the ID support uses to find that exact call in the API's logs. `AltClient` appends it to the message of every error it raises.
 - **Handle the other errors:** `403` = subscription/entitlement gap (not a bug), `401` = bad or expired token, `400` = bad filter (e.g. `/investors/` on a snapshot company).
 - **Money is USD-normalized** (`_usd` suffix) — no client-side FX.

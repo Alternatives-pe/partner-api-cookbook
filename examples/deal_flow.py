@@ -35,7 +35,7 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from api_client import AltClient, build_parser, emit, pick  # noqa: E402
+from api_client import AltClient, build_parser, emit, pick, request_id  # noqa: E402
 
 # Sort keys the endpoint accepts. `deal_size_usd` is null on Reported deals and
 # nulls sort last, so it ranks only part of the market — `total_deal_size_usd` is
@@ -151,7 +151,10 @@ def main():
                 detail = resp.json().get("detail", resp.text[:300])
             except ValueError:
                 detail = resp.text[:300]
-            raise SystemExit(f"API rejected the query (HTTP {resp.status_code}): {detail}")
+            raise SystemExit(
+                f"API rejected the query (HTTP {resp.status_code}): {detail} "
+                f"[X-Request-ID: {request_id(resp)}]"
+            )
         raise
 
     records = [row(d) for d in deals]

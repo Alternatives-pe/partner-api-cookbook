@@ -62,6 +62,20 @@ def _log_call(method, url, params=None, body=None):
     print(line, file=sys.stderr)
 
 
+def request_id(resp):
+    """The ``X-Request-ID`` the API stamps on every response, or None.
+
+    It is the ID support uses to find the call in the API's logs, so quote it
+    when reporting a failed request.
+    """
+    return resp.headers.get("X-Request-ID") if resp is not None else None
+
+
+def _with_request_id(message, resp):
+    rid = request_id(resp)
+    return f"{message} [X-Request-ID: {rid}]" if rid else message
+
+
 class RateLimitExceeded(requests.HTTPError):
     """A 429 that outlived the retry budget.
 
@@ -146,7 +160,8 @@ class AltClient:
         Rate-limit responses carry the exact cooldown (``Retry-After``, mirrored
         in the body as ``retry_after_seconds``), so we sleep for that rather than
         guessing with a fixed backoff — retrying early just burns another slot in
-        the window. Every other error is raised as usual.
+        the window. Every other error is raised as usual. Error messages end with
+        the response's ``X-Request-ID`` so a failure can be quoted to support.
         """
         for attempt in range(max_retries + 1):
             resp = self.session.request(
@@ -154,16 +169,23 @@ class AltClient:
                 timeout=30,
             )
             if resp.status_code != 429:
-                resp.raise_for_status()
+                try:
+                    resp.raise_for_status()
+                except requests.HTTPError as exc:
+                    raise requests.HTTPError(
+                        _with_request_id(str(exc), resp), response=resp
+                    ) from None
                 return resp
             if attempt == max_retries:
                 break
             wait = _rate_limit_wait(resp, attempt)
             if wait > MAX_RETRY_WAIT:
                 raise RateLimitExceeded(
-                    f"Rate limited ({_rate_limit_detail(resp)}); the API asked for "
-                    f"{wait:.0f}s, above the {MAX_RETRY_WAIT:.0f}s cap. Raise "
-                    f"ALT_MAX_RETRY_WAIT to wait longer.",
+                    _with_request_id(
+                        f"Rate limited ({_rate_limit_detail(resp)}); the API asked for "
+                        f"{wait:.0f}s, above the {MAX_RETRY_WAIT:.0f}s cap. Raise "
+                        f"ALT_MAX_RETRY_WAIT to wait longer.", resp,
+                    ),
                     response=resp,
                 )
             print(
@@ -173,8 +195,10 @@ class AltClient:
             )
             time.sleep(wait)
         raise RateLimitExceeded(
-            f"Rate limited ({_rate_limit_detail(resp)}) and still limited after "
-            f"{max_retries} retries.",
+            _with_request_id(
+                f"Rate limited ({_rate_limit_detail(resp)}) and still limited after "
+                f"{max_retries} retries.", resp,
+            ),
             response=resp,
         )
 
