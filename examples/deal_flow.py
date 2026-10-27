@@ -62,8 +62,18 @@ def row(deal):
     Company identity is inline: every row carries a nested `capital_receiver`
     block holding the profile UUID and the legal entity's name and registration
     numbers, so naming a market-wide window costs no extra call.
+
+    `source_file_attachments` lists the documents the deal cites. The API never
+    returns internal-use documents to partners; the `is_internal_use` check is a
+    guard in case that flag ever reaches the payload. Each `url` is signed and
+    expires after about an hour, so re-run rather than keep old links.
     """
     reg_numbers = pick(deal, "capital_receiver.legal_entity.registration_numbers") or []
+    documents = [
+        {"title": d.get("title"), "type": pick(d, "type.key"), "url": d.get("url")}
+        for d in deal.get("source_file_attachments") or []
+        if not d.get("is_internal_use")
+    ]
     return {
         "date": deal.get("date"),
         "company": pick(deal, "capital_receiver.legal_entity.display_name"),
@@ -78,6 +88,7 @@ def row(deal):
         "shares_sold": deal.get("no_shares_sold"),
         "provenance": pick(deal, "provenance.name"),
         "transactions": deal.get("count_of_transactions"),
+        "source_documents": documents,
         "deal_uuid": deal.get("uuid"),
     }
 

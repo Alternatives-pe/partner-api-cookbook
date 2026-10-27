@@ -2,13 +2,13 @@
 Recipe 8 — Fund benchmarking.
 
 Compare IRR / TVPI / DPI / RVPI across funds by vintage to benchmark a GP or
-screen funds. Performance metrics are NOT on the fund list, so we fetch the
-latest performance record (and fund size) per fund.
+screen funds. Fund size and fee terms come on the fund list itself; performance
+metrics do not, so we fetch the latest performance record per fund.
 
 Endpoints:
     POST funds/                       filters: vintage_year range
+                                      (returns latest_fund_size + fee terms)
     GET  funds/{uuid}/performance/    (latest IRR/DPI/RVPI/TVPI record)
-    GET  funds/{uuid}/aum/            (latest fund size)
 
 Examples:
     python examples/fund_benchmark.py --vintage-from 2016 --vintage-to 2020
@@ -33,7 +33,6 @@ def latest(client, path, date_key="date"):
 def benchmark(client, fund):
     uuid = fund["uuid"]
     perf = latest(client, f"funds/{uuid}/performance/")
-    aum = latest(client, f"funds/{uuid}/aum/", date_key="aum_value_date")
     managers = fund.get("fund_managers") or []
     return {
         "uuid": uuid,
@@ -41,7 +40,13 @@ def benchmark(client, fund):
         "manager": ", ".join(m.get("display_name") for m in managers),
         "vintage_year": fund.get("vintage_year"),
         "status": pick(fund, "status.name"),
-        "fund_size_usd": aum.get("aum_value_usd"),
+        # The list row's newest AUM record, null when the fund has none.
+        "fund_size_usd": pick(fund, "latest_fund_size.aum_value_usd"),
+        "fund_size_as_of": pick(fund, "latest_fund_size.aum_value_date"),
+        "management_fee_pct": fund.get("management_fee_percentage"),
+        "carry_pct": fund.get("carry_percentage"),
+        "hurdle_pct": fund.get("hurdle_percentage"),
+        "gp_commitment_pct": fund.get("gp_commitment_percentage"),
         "as_of": perf.get("date"),
         "irr": perf.get("irr"),
         "tvpi": perf.get("net_multiple"),
@@ -67,7 +72,7 @@ def main():
     client = AltClient()
     funds = client.post("funds/", {"filters": {"all": filters}},
                         params={"limit": args.limit}).get("results", [])
-    print(f"Benchmarking {len(funds)} funds (one /performance/ + /aum/ call each)…",
+    print(f"Benchmarking {len(funds)} funds (one /performance/ call each)…",
           file=sys.stderr)
     records = sort_records([benchmark(client, f) for f in funds],
                            args.sort or "-irr")

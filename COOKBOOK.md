@@ -121,6 +121,8 @@ python examples/deal_flow.py --since 2026-06-01 --sort=-no_shares_sold -n 25
 
 > **Deal rows carry the company inline.** Each row has a nested `capital_receiver` block: `uuid` (the capital receiver profile UUID, the one `capital-receivers/{uuid}/` takes) plus `legal_entity` with its own `uuid`, `display_name` and `registration_numbers`. So a market-wide window is labelled from the one deals query — no per-company lookup to resolve names. The flat `capital_receiver_uuid` is still on every row for consumers already joining on it.
 
+> **Deal rows carry their source documents.** `source_file_attachments` lists the documents a deal cites, each `{uuid, url, type: {name, key}, title}`, and is empty when it cites none. Partners only ever get customer-visible documents; internal-use ones are never returned. `url` is signed and expires after about an hour, so fetch the deal again for a fresh link rather than storing it.
+
 > **Taxonomy filters take a key or a display name.** `deal_transaction_type_key`, `allocation_type_key`, `allocation_subtype_key` and `provenance_key` match the stable keys that the response and `reference-data` both carry. Their name-matching siblings (`deal_transaction_type`, `allocation_type`, …) are case-sensitive, so build against the keys.
 
 ---
@@ -176,8 +178,8 @@ funds = client.post("funds/", {
     "filters": {"all": [{"op": "gte", "field": "vintage_year", "value": 2016}]},
 }, params={"limit": 20})
 for f in funds["results"]:
+    f["latest_fund_size"]                           # fund size, on the list row
     client.get(f"funds/{f['uuid']}/performance/")   # IRR/DPI/RVPI/TVPI per record
-    client.get(f"funds/{f['uuid']}/aum/")           # fund size
 ```
 
 ```bash
@@ -185,6 +187,8 @@ python examples/fund_benchmark.py --vintage-from 2016 --vintage-to 2020 --sort=-
 ```
 
 > Performance metrics are **not** on the fund list — fetch them per fund. `net_multiple` is TVPI.
+
+> **Fund size and fee terms are on the list row.** `GET`/`POST funds/` and `capital-allocators/{uuid}/funds/` return `latest_fund_size` (the newest AUM record, in the shape `funds/{uuid}/aum/` returns, or `null`) and `management_fee_percentage`, `carry_percentage`, `hurdle_percentage` and `gp_commitment_percentage`. Read them from the row instead of calling `/aum/` per fund. None of the five can be filtered or sorted on.
 
 ### 9. Co-investor / syndicate network mapping
 **What:** Aggregate cap tables across a sector to see who co-invests with whom.
