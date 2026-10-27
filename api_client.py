@@ -10,6 +10,8 @@ Provides:
       * reuse one session, page with limit/offset, or by keyset on
         (aggregate_updated_at, uuid) for an incremental sync (paginate_changed)
       * on 429, wait the cooldown the response asks for, then retry
+      * print each data call (method, URL, JSON body) to stderr so you can see
+        what a recipe asks the API for; ALT_LOG_CALLS=0 turns this off
   - CLI + output helpers shared across the cookbook scripts:
       * add_common_args() / build_parser() — standard --limit/--sort/--format/-o
       * emit() — write a list of records as CSV (default) or JSON
@@ -42,6 +44,22 @@ MAX_RETRY_WAIT = float(os.environ.get("ALT_MAX_RETRY_WAIT", "120"))
 API_KEY = os.environ.get("ALT_API_KEY")
 BASE_URL = os.environ.get("ALT_BASE_URL", "https://api.altdmp.io/v3/partners")
 TOKEN_URL = os.environ.get("ALT_TOKEN_URL", "https://api.altdmp.io/v3/token/issue/")
+
+# Print each data call to stderr. Only the method, URL and JSON body are shown:
+# the bearer token travels in a header and the API key only in the token
+# request, and neither is logged.
+LOG_CALLS = os.environ.get("ALT_LOG_CALLS", "1") != "0"
+CALL_LOG_PREFIX = "→ "
+
+
+def _log_call(method, url, params=None, body=None):
+    if not LOG_CALLS:
+        return
+    full_url = requests.Request(method, url, params=params).prepare().url
+    line = f"{CALL_LOG_PREFIX}{method} {full_url}"
+    if body is not None:
+        line += f"  body={json.dumps(body, separators=(',', ':'))}"
+    print(line, file=sys.stderr)
 
 
 class RateLimitExceeded(requests.HTTPError):
@@ -179,6 +197,7 @@ class AltClient:
 
     def get(self, path, params=None, max_retries=4):
         url = f"{BASE_URL}/{path.lstrip('/')}"
+        _log_call("GET", url, params=params)
         return self._request(
             "GET", url, headers=self._headers(), params=params,
             max_retries=max_retries,
@@ -198,6 +217,7 @@ class AltClient:
         """
         url = f"{BASE_URL}/{path.lstrip('/')}"
         headers = {**self._headers(), "Content-Type": "application/json"}
+        _log_call("POST", url, params=params, body=body)
         return self._request(
             "POST", url, headers=headers, params=params, json_body=body,
             max_retries=max_retries,

@@ -35,7 +35,7 @@ RECIPES = [
     ("syndicate_map",        ["--themes", "themes_payments", "--companies", "20", "-n", "5"]),
     ("pe_screener",          ["--min-revenue", "25000000", "--country", "SGP", "-n", "5"]),
     ("watchlist_monitor",    ["c16a0ffd-4dbb-4f7b-a9ca-a3a47f93be67"]),
-    ("lp_intelligence",      ["--lp", "Wavemaker", "-n", "5"]),
+    ("lp_intelligence",      ["--lp", "GIC", "-n", "5"]),
     ("service_providers",    ["--search", "Deloitte", "-n", "5"]),
     ("incremental_sync",     ["--days", "1", "-n", "5", "--no-save"]),
     ("reference_data",       ["--categories", "themes", "-n", "5"]),
@@ -63,7 +63,9 @@ def main():
             note = ""
             if ok:
                 # Scripts print a one-line summary to stderr; show the last line.
-                lines = [ln for ln in proc.stderr.splitlines() if ln.strip()]
+                # Skip the API-call log lines AltClient prints.
+                lines = [ln for ln in proc.stderr.splitlines()
+                         if ln.strip() and not ln.startswith(CALL_LOG_PREFIX)]
                 note = lines[-1] if lines else ""
             else:
                 note = (proc.stderr.strip() or proc.stdout.strip()).splitlines()[-1:] or [""]
